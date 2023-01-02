@@ -913,11 +913,14 @@ static int get_key_fwu_v3(size_t size, uint8_t *buf, uint8_t *blockA, uint8_t *b
     return 0;
 }
 
-static int decrypt_fwu_v3(uint8_t *buf, size_t *size, uint8_t block[512])
+static int decrypt_fwu_v3(uint8_t *buf, size_t *size )
 {
     uint8_t blockA;
     uint8_t blockB;
     uint8_t keybuf[32];
+    uint8_t block[512];
+    memset(block, 0, sizeof(block));
+
     struct fwu_hdr_t *hdr = (void *)buf;
     memset(keybuf, 0, sizeof(keybuf));
     int ret = get_key_fwu_v3(*size, buf, &blockA, &blockB, keybuf, block);
@@ -1019,9 +1022,7 @@ int fwu_decrypt(uint8_t *buf, size_t *size)
 
     if(g_version[ver].version == 3)
     {
-        uint8_t block[512];
-        memset(block, 0, sizeof(block));
-        return decrypt_fwu_v3(buf, size, block);
+        return decrypt_fwu_v3(buf, size);
     }
     else
     {
