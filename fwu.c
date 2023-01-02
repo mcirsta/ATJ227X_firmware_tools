@@ -58,19 +58,6 @@ struct fwu_crypto_hdr_t
     uint8_t key[32];
 } __attribute__((packed));
 
-struct fwu_tail_t
-{
-    uint8_t length; /* in blocks? it's always 1 */
-    uint8_t type; /* always 7 */
-    uint8_t reserved[14];
-    uint32_t fwu_checksum;
-    uint32_t flags; /* always 0x55aa55aa */
-    uint8_t desc[8]; /* always 'FwuTail' */
-    uint8_t fwu_crc_checksum[32]; /* always 0 */
-    uint8_t reserved2[444];
-    uint32_t fwutail_checksum;
-} __attribute__((packed));
-
 struct version_desc_t
 {
     uint8_t version;
@@ -875,6 +862,11 @@ static int get_key_fwu_v3(size_t size, uint8_t *buf, uint8_t *blockA, uint8_t *b
     check_field(ret, 0, "Pass\n", "Fail\n");
 
     ret = crypto4(crypto_hdr.key, &ptrs, g_decode_buffer3);
+    free(ptrs.x);
+    free(ptrs.y);
+    ptrs.x = NULL;
+    ptrs.y = NULL;
+
     cprintf(GREEN, "  Crypto 4: ");
     check_field(ret, 0, "Pass\n", "Fail\n");
 
@@ -918,12 +910,6 @@ static int get_key_fwu_v3(size_t size, uint8_t *buf, uint8_t *blockA, uint8_t *b
     cprintf(GREEN, "  Compare: ");
     check_field(ret, 0, "Pass\n", "Fail\n");
 
-    /*
-    ret = memcmp(midbuf + 25, zero, sizeof(zero));
-    cprintf(GREEN, "  Sanity: ");
-    check_field(ret, 0, "Pass\n", "Fail\n");
-    */
-
     return 0;
 }
 
@@ -957,6 +943,7 @@ static int decrypt_fwu_v3(uint8_t *buf, size_t *size, uint8_t block[512])
     decode_perm(tmpbuf, *size, g_perm_B);
     memcpy(buf, tmpbuf, *size);
 
+    free(tmpbuf);
     return 0;
 }
 
@@ -1029,33 +1016,6 @@ int fwu_decrypt(uint8_t *buf, size_t *size)
         cprintf(RED, " Mismatch\n");
         return 2;
     }
-
-    /* check whether the firmware has a FwuTail (as far as I know, there is no flag anywhere that
-     * indicates its presence or not) */
-    struct fwu_tail_t *tail = (void *)(buf + hdr->fw_size - sizeof(struct fwu_tail_t));
-    if(tail->flags == 0x55aa55aa && strcmp((char *)tail->desc, "FwuTail") == 0)
-    {
-        cprintf(BLUE, "Tail\n");
-        cprintf_field("  Length: ", "%d ", tail->length);
-        check_field_soft(tail->length, 1, "Ok\n", "Fail\n");
-        cprintf_field("  Type: ", "%d ", tail->type);
-        check_field_soft(tail->type, 7, "Ok\n", "Fail\n");
-        cprintf_field("  FW checksum: ", "%x ", tail->fwu_checksum);
-        check_field_soft(fwu_checksum(buf, hdr->fw_size - sizeof(struct fwu_tail_t)),
-            tail->fwu_checksum, "Ok\n", "Mismatch\n");
-        cprintf(GREEN, "  FW CRC Checksum: ");
-        for(unsigned i = 0; i < sizeof(tail->fwu_crc_checksum); i++)
-            cprintf(YELLOW, "%02x", tail->fwu_crc_checksum[i]);
-        cprintf(RED, " Ignored (should be 0)\n");
-        cprintf_field("  Tail checksum: ", "%x ", tail->fwutail_checksum);
-        check_field_soft(fwu_checksum(tail, sizeof(struct fwu_tail_t) - 4),
-            tail->fwutail_checksum, "Ok\n", "Mismatch\n");
-        /* if it has a tail, the firmware size includes it, so we need to decrease it to avoid
-         * "decrypting" the tail and output garbage */
-        hdr->fw_size -= sizeof(struct fwu_tail_t);
-    }
-    else
-        cprintf(BLUE, "Firmware does not seem to have a tail\n");
 
     if(g_version[ver].version == 3)
     {
